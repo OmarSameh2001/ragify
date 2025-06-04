@@ -1,4 +1,3 @@
-import { IncomingForm } from 'formidable';
 import { Readable } from 'stream';
 import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
@@ -9,10 +8,6 @@ export const config = {
     bodyParser: false,
   },
 };
-
-function streamifyRequest(request) {
-  return Readable.from(request.body);
-}
 
 export async function POST(req) {
   const formData = await req.formData();
