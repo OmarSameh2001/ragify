@@ -1,7 +1,16 @@
+export const runtime = "nodejs";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { pipeline } from "@xenova/transformers";
-import { MongoClient } from "mongodb";
+import {
+  addToIndex,
+  deleteIndex,
+  getIndexFiles,
+  searchIndex,
+  vectorPool,
+  reshapeTensor,
+} from "../(helpers)/indexes";
+import { v4 as uuidv4 } from "uuid";
 
 export const config = {
   api: {
@@ -17,46 +26,20 @@ function preprocessText(text) {
 export async function POST(req) {
   const formData = await req.formData();
   const file = formData.get("file");
-  const mongo = formData.get("mongo");
-  const mongoDb = formData.get("mongoDb");
-  const mongoCollection = formData.get("mongoCollection");
-  let collection, db;
-  if (!mongo || !mongoDb || !mongoCollection) {
-    return new Response(
-      JSON.stringify({ error: "MongoDB connection details are required" }),
-      { status: 400 }
-    );
-  } else {
-    console.log("MongoDB connection details provided");
-    const client = new MongoClient(mongo);
-    try {
-      await client.connect();
-      console.log("Connected to MongoDB");
-    } catch (error) {
-      console.error("Failed to connect to MongoDB:", error);
-      return new Response(
-        JSON.stringify({ error: "Failed to connect to MongoDB" }),
-        { status: 500 }
-      );
-    }
-    db = client.db(mongoDb);
-    collection = db.collection(mongoCollection);
-    console.log(`Using MongoDB collection: ${mongoCollection}`);
-  }
-  // const stream = streamifyRequest(req);
+  let sessionId = formData.get("sessionId");
 
   if (!file) {
     return new Response(JSON.stringify({ error: "No file uploaded" }), {
       status: 400,
     });
   }
-  console.log(file);
+  // console.log(file);
   const loader = new PDFLoader(file); // use .filepath, not Blob
   const docs = await loader.load();
   const textExtract = docs.map((doc) => doc.pageContent).join("\n");
   const text = preprocessText(textExtract);
 
-  console.log(text);
+  // console.log(text);
   const extractor = await pipeline(
     "feature-extraction",
     "Xenova/paraphrase-multilingual-MiniLM-L12-v2"
@@ -70,85 +53,96 @@ export async function POST(req) {
   const output = await splitter.createDocuments([text]);
 
   const chunks = [];
+  const texts = [];
   for (const chunk of output) {
-    const embed = await extractor(chunk.pageContent);
-    chunks.push({ chunk: chunk, embedding: embed, meta: file.name });
+    let embed = await extractor(chunk.pageContent);
+    const reshaped = reshapeTensor(embed.data, embed.dims); // [tokens][384]
+    embed = vectorPool(reshaped);
+    chunks.push(embed);
+    texts.push(chunk.pageContent);
+
+    console.log(embed.length, embed);
   }
   console.log(`Extracted ${chunks.length} chunks from the document.`);
-  if (mongo && mongoDb && mongoCollection) {
-    try {
-      await collection.insertMany(chunks);
-      await db.collection("pdfs-names").insertOne({ name: file.name });
-      console.log(
-        `Inserted ${chunks.length} chunks of ${file.name} into MongoDB collection: ${mongoCollection}`
-      );
-    } catch (error) {
-      console.error("Failed to insert chunks into MongoDB:", error);
-      return new Response(
-        JSON.stringify({ error: "Failed to insert chunks into MongoDB" }),
-        { status: 500 }
-      );
-    }
+  if (!sessionId) {
+    sessionId = uuidv4();
   }
-
-  return new Response(JSON.stringify({ success: true, chunks }), {
+  // console.log(chunks)
+  console.log(`session ID: ${sessionId}`);
+  const index = addToIndex(sessionId, chunks, texts, file.name);
+  console.log(index);
+  return new Response(JSON.stringify({ success: true, sessionId }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-export async function GET(req) {
-  const uri = req.nextUrl.searchParams.get("mongo");
-  const dbName = req.nextUrl.searchParams.get("mongoDb");
-  const client = new MongoClient(uri);
-  let db, collection;
-  try {
-    await client.connect();
-    console.log("Connected to MongoDB");
-    db = client.db(dbName);
-    collection = db.collection("pdfs-names");
-  } catch (error) {
-    console.error("Failed to connect to MongoDB:", error);
+export async function PUT(req) {
+  const formData = await req.formData();
+  const files = formData.get("fileName");
+  const sessionId = formData.get("sessionId");
+  const vectors = formData.getAll("vectors");
+  if (!sessionId || !files || !vectors) {
     return new Response(
-      JSON.stringify({ error: "Failed to connect to MongoDB" }),
-      { status: 500 }
+      JSON.stringify({
+        error: "Session ID, file name and vectors are required",
+      }),
+      { status: 400 }
     );
   }
-  const names = await collection.find().toArray();
-  // console.log(names);
-  return new Response(JSON.stringify({ success: true, files: names }), {
+  addToIndex(sessionId, vectors, Array.from(files));
+  return new Response(JSON.stringify({ success: true }), { status: 200 });
+}
+
+export async function GET(req) {
+  const query = req.nextUrl.searchParams.get("query") || "";
+  const sessionId = req.nextUrl.searchParams.get("sessionId");
+  if (!sessionId) {
+    return new Response(JSON.stringify({ error: "Session ID is required" }), {
+      status: 400,
+    });
+  }
+
+  let names;
+  try {
+    if (query) {
+      const extractor = await pipeline(
+        "feature-extraction",
+        "Xenova/paraphrase-multilingual-MiniLM-L12-v2"
+      );
+      const embed = await extractor(query);
+      const reshaped = reshapeTensor(embed.data, embed.dims);
+      const vector = vectorPool(reshaped);
+      
+      names = searchIndex(sessionId, vector);
+      console.log(names);
+    } else {
+      names = getIndexFiles(sessionId);
+      console.log(`Found ${names.files} files in the index.`);
+    }
+    if (!names || names.length === 0) {
+      return new Response(JSON.stringify({ error: "No files found" }), {
+        status: 404,
+      });
+    }
+  } catch (error) {
+    console.error(error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+    });
+  }
+  return new Response(JSON.stringify({ success: true, data: names }), {
     status: 200,
   });
 }
 
 export async function DELETE(req) {
-  const uri = req.nextUrl.searchParams.get("mongo");
-  const dbName = req.nextUrl.searchParams.get("mongoDb");
-  const collectionName = req.nextUrl.searchParams.get("mongoCollection");
-  const fileName = req.nextUrl.searchParams.get("fileName");
-  const client = new MongoClient(uri);
-  let db, collection;
-  try {
-    await client.connect();
-    console.log("Connected to MongoDB");
-    db = client.db(dbName);
-    collection = db.collection("pdfs-names");
-  } catch (error) {
-    console.error("Failed to connect to MongoDB:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to connect to MongoDB" }),
-      { status: 500 }
-    );
+  const sessionId = req.nextUrl.searchParams.get("sessionId");
+  if (!sessionId) {
+    return new Response(JSON.stringify({ error: "Session ID is required" }), {
+      status: 400,
+    });
   }
-  try {
-    await db.collection(collectionName).deleteMany({ meta: fileName });
-    await collection.deleteOne({ name: fileName });
-  } catch (error) {
-    console.error("Failed to delete file from MongoDB:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to delete file from MongoDB" }),
-      { status: 500 }
-    );
-  }
+  deleteIndex(sessionId);
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
