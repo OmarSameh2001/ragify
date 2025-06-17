@@ -4,6 +4,8 @@ import "./globals.css";
 import Navbar from "../components/navbar/navbar";
 import { ThemeProvider } from "@/context/theme";
 import { EnviromentProvider } from "@/context/enviroment";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import QueryProvider from "@/context/query";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,12 +31,14 @@ export default function RootLayout({
     <html lang="en">
       <ThemeProvider>
         <EnviromentProvider>
+          <QueryProvider>
           <body
             className={`${geistSans.variable} ${geistMono.variable} antialiased`}
           >
             <Navbar />
             {children}
           </body>
+          </QueryProvider>
         </EnviromentProvider>
       </ThemeProvider>
     </html>

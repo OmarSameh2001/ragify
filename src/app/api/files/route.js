@@ -9,6 +9,7 @@ import {
   searchIndex,
   vectorPool,
   reshapeTensor,
+  preprocessText,
 } from "../(helpers)/indexes";
 import { v4 as uuidv4 } from "uuid";
 
@@ -17,11 +18,6 @@ export const config = {
     bodyParser: false,
   },
 };
-function preprocessText(text) {
-  text = text.replace(/\W+/g, " "); // Remove special characters
-  text = text.replace(/\s+/g, " ").trim(); // Remove extra spaces
-  return text.toLowerCase();
-}
 
 export async function POST(req) {
   const formData = await req.formData();
@@ -71,7 +67,7 @@ export async function POST(req) {
   console.log(`session ID: ${sessionId}`);
   const index = addToIndex(sessionId, chunks, texts, file.name);
   console.log(index);
-  return new Response(JSON.stringify({ success: true, sessionId }), {
+  return new Response(JSON.stringify({ success: true, sessionId, chunks, texts }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -81,16 +77,27 @@ export async function PUT(req) {
   const formData = await req.formData();
   const files = formData.get("fileName");
   const sessionId = formData.get("sessionId");
-  const vectors = formData.getAll("vectors");
-  if (!sessionId || !files || !vectors) {
+  const chunks = formData.getAll("chunks");
+  const texts = formData.getAll("texts");
+  if (!sessionId || !files || !chunks || !texts) {
     return new Response(
       JSON.stringify({
-        error: "Session ID, file name and vectors are required",
+        error: "Session ID, file name and chunks are required",
       }),
       { status: 400 }
     );
   }
-  addToIndex(sessionId, vectors, Array.from(files));
+  console.log("Updating index for session:", sessionId);
+  console.log("Files:", files);
+  // console.log("chunks:", JSON.parse(chunks)[0].length);
+
+  const index = addToIndex(sessionId, JSON.parse(chunks), files, JSON.parse(texts));
+  console.log("Index updated:", index);
+  if (index.error) {
+    return new Response(JSON.stringify({ error: index.error }), {
+      status: 500,
+    });
+  }
   return new Response(JSON.stringify({ success: true }), { status: 200 });
 }
 
@@ -118,7 +125,9 @@ export async function GET(req) {
       console.log(names);
     } else {
       names = getIndexFiles(sessionId);
-      console.log(`Found ${names.files} files in the index.`);
+      if (names.files) {
+        names = names.files;
+      }
     }
     if (!names || names.length === 0) {
       return new Response(JSON.stringify({ error: "No files found" }), {
@@ -131,6 +140,7 @@ export async function GET(req) {
       status: 500,
     });
   }
+  console.log(names)
   return new Response(JSON.stringify({ success: true, data: names }), {
     status: 200,
   });

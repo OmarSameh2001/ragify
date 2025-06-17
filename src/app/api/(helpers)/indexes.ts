@@ -1,3 +1,4 @@
+import { error } from "console";
 import faiss from "faiss-node";
 import { console } from "inspector";
 
@@ -48,8 +49,8 @@ export function createIndex(
 export function addToIndex(
   sessionId: string,
   vectors: [number[]],
-  texts: string[],
-  file: string
+  file: string,
+  texts: string[]
 ) {
   const entry = store.get(sessionId);
   if (!entry) {
@@ -57,7 +58,10 @@ export function addToIndex(
     const res = createIndex(sessionId, vectors, texts, file);
     return res;
   }
-
+  if (entry.files.some((text) => text === file)) {
+    console.warn(`File ${file} already exists in session ${sessionId}`);
+    return{error: `File ${file} already exists in current session`};
+  }
   // const flat = flattenVectors(vectors);
   for (const vec of vectors) {
     if (vec.length !== 384) {
@@ -76,6 +80,7 @@ export function addToIndex(
   if (file) {
     entry.files = entry.files ? [...entry.files, file] : [file];
   }
+  return{entry,files: entry.files, texts: entry.texts};
 }
 
 export function searchIndex(
@@ -148,3 +153,8 @@ export function reshapeTensor(data: Float32Array, dims: number[]): number[][] {
   return result;
 }
 
+export function preprocessText(text: string) {
+  text = text.replace(/\W+/g, " "); // Remove special characters
+  text = text.replace(/\s+/g, " ").trim(); // Remove extra spaces
+  return text.toLowerCase();
+}

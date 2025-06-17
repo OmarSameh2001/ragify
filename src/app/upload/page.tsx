@@ -1,15 +1,54 @@
 "use client";
 import { Button, ButtonProps, Switch, TextField } from "@mui/material";
-import { useState, useContext, useEffect } from "react";
-import { EnviromentContext } from "@/context/enviroment";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { initDB } from "@/app/(helpers)/indexDb";
+import FilesTable from "@/components/table/table";
+import { text } from "stream/consumers";
 
 export default function Upload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLocal, setIsLocal] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
-  // const [mongoUri, setMongoUri] = useState<string>("");
-  const { mongo, setMongo, mongoCollection, setMongoCollection, mongoDb, setMongoDb } =
-    useContext(EnviromentContext);
+  const [session, setSession] = useState<string>("");
+  // const [localDb, setLocalDb] = useState<string[]>([]);
+
+  const { data, refetch } = useQuery({
+    queryKey: ["getIndexes"],
+    queryFn: async () => {
+      const res = await fetch(`/api/files?sessionId=${session}`, {
+        method: "GET",
+      });
+      console.log(res);
+      if (!res.ok) {
+        return [];
+      }
+      const data = await res.json();
+      return data.data;
+    },
+  });
+  const { data:localDb, refetch: refetchLocalDb } = useQuery({
+    queryKey: ["getLocalDb", selectedFile, session],
+    queryFn: async () => {
+      const db = await initDB();
+      const files = await db.getAll("files");
+      return files;
+    },
+  });
+  // useEffect(() => {
+    // const fetchLocalDb = async () => {
+    //   const db = await initDB();
+    //   const files = await db.getAll("files");
+    //   setLocalDb(files);
+    // };
+    // fetchLocalDb();
+  // }, [selectedFile]);
+
+  const checkDuplicateFile = async (fileName: string) => {
+    const db = await initDB();
+    const files = await db.getAll("files");
+    return files.some((file: { name: string }) => file.name === fileName);
+  }
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
@@ -25,36 +64,37 @@ export default function Upload() {
   };
   const handleUpload = async () => {
     if (!selectedFile) return;
+    const isDuplicate = await checkDuplicateFile(selectedFile.name);
+    if (isDuplicate) {
+      alert("File already exists in the database.");
+      return;
+    }
     setLoading(true);
     try {
       const formData = new FormData();
       formData.append("file", selectedFile);
-      formData.append("mongo", mongo);
-      formData.append("mongoDb", mongoDb);
-      formData.append("mongoCollection", mongoCollection);
+      if (session) formData.append("sessionId", session);
       console.log(selectedFile);
       const res = await fetch("/api/files", {
         method: "POST",
         body: formData,
       });
-      console.log(res);
+      const data = await res.json();
       setLoading(false);
+      setSession(data.sessionId || "");
+      localStorage.setItem("sessionId", data.sessionId || "");
+      setSelectedFile(null);
+      const db = await initDB();
+      await db.add("files", {
+        name: selectedFile.name,
+        date: new Date(),
+        chunks: data.chunks,
+        texts: data.texts,
+      });
     } catch (error) {
       console.error("Error uploading file:", error);
       alert("Failed to upload file. Please try again.");
       setLoading(false);
-    }
-  };
-  const handleLocal = (value: boolean) => {
-    setIsLocal(value);
-    if (value) {
-      localStorage.setItem("mongo", mongo);
-      localStorage.setItem("mongoDb", mongoDb);
-      localStorage.setItem("mongoCollection", mongoCollection);
-    } else {
-      localStorage.removeItem("mongo");
-      localStorage.removeItem("mongoDb");
-      localStorage.removeItem("mongoCollection");
     }
   };
   const buttonProps: ButtonProps = {
@@ -69,96 +109,81 @@ export default function Upload() {
     },
     // disabled: !selectedFile,
   };
+  // useEffect(() => {
+  //   const savedMongo = localStorage.getItem("mongo");
+  //   const savedMongoCollection = localStorage.getItem("mongoCollection");
+  //   if (savedMongo || savedMongoCollection) {
+  //     setIsLocal(true);
+  //   }
+  // }, []);
   useEffect(() => {
-    const savedMongo = localStorage.getItem("mongo");
-    const savedMongoCollection = localStorage.getItem("mongoCollection");
-    if (savedMongo || savedMongoCollection) {
-      setIsLocal(true);
+    const sessionId = localStorage.getItem("sessionId");
+    if (sessionId) {
+      setSession(sessionId);
     }
   }, []);
+  console.log("Local DB:", localDb);
+  console.log('Data:',data)
   return (
-    <form onSubmit={(e) => {
-      e.preventDefault();
-      handleUpload();
-    }}>
-    <div className="flex items-center justify-center min-h-screen flex-col">
-      <h1 className="text-2xl font-bold mb-4">Upload PDF File</h1>
-      <p className="text-gray-600 mb-2">
-        Please set the mongo uri and state the collection name where the index
-        is set
-      </p>
-      <div className="flex flex-wrap gap-4 mb-4">
-        <TextField
-          label="Mongo URI"
-          variant="outlined"
-          margin="normal"
-          value={mongo || ""}
-          onChange={(e) => setMongo(e.target.value)}
-          required
-        />
-        <TextField
-          label="Mongo Db Name"
-          variant="outlined"
-          margin="normal"
-          value={mongoDb || ""}
-          onChange={(e) => setMongoDb(e.target.value)}
-          required
-        />
-        <TextField
-          label="Mongo Collection Name"
-          variant="outlined"
-          margin="normal"
-          value={mongoCollection || ""}
-          onChange={(e) => setMongoCollection(e.target.value)}
-          required
-        />
-        <div className="flex items-center">
-          <label className="mr-2 text-gray-600">Save Locally:</label>
-          <Switch
-            checked={isLocal}
-            color="primary"
-            inputProps={{ "aria-label": "controlled" }}
-            disabled={(!mongo || !mongoCollection || !mongoDb) && !isLocal}
-            onChange={(e) => handleLocal(e.target.checked)}
+    <div>
+      
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleUpload();
+      }}
+    >
+      <div className="flex items-center justify-center min-h-screen flex-col">
+        {localDb && localDb.length > 0 && (
+        <div className="flex items-center justify-center flex-col mb-4">
+          <p className="text-gray-600">
+            You have uploaded the following files:
+          </p>
+          {/* <ul className="list-disc list-inside">
+            {localDb.map((value: any) => (
+              <li key={value.name}>{value.name}</li>
+            ))}
+          </ul> */}
+          <FilesTable tableData={localDb} indexed={data} refetchLocal={refetchLocalDb} refetchIndex={refetch} sessionId={session}/>
+        </div>
+      )}
+        <p className="text-gray-600">
+          Select a PDF file to upload. The file will be processed and stored.
+        </p>
+        <p className="text-gray-600 mb-4">
+          Make sure the file is less than 10MB in size and is a valid PDF.
+        </p>
+        <Button {...buttonProps}>
+          {selectedFile ? `File: ${selectedFile.name}` : "Choose PDF File"}
+          <input
+            type="file"
+            hidden
+            accept=".pdf" // Accept only PDF files
+            onChange={handleFileChange}
+            required
           />
+        </Button>
+        <div className="flex items-center justify-center gap-4">
+          <Button
+            variant="contained"
+            color="primary"
+            // onClick={handleUpload}
+            type="submit"
+            disabled={!selectedFile || loading}
+          >
+            Upload
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={() => setSelectedFile(null)}
+            disabled={!selectedFile || loading}
+          >
+            Delete
+          </Button>
         </div>
       </div>
-      <p className="text-gray-600">
-        Select a PDF file to upload. The file will be processed and stored.
-      </p>
-      <p className="text-gray-600 mb-4">
-        Make sure the file is less than 10MB in size and is a valid PDF.
-      </p>
-      <Button {...buttonProps}>
-        {selectedFile ? `File: ${selectedFile.name}` : "Choose PDF File"}
-        <input
-          type="file"
-          hidden
-          accept=".pdf" // Accept only PDF files
-          onChange={handleFileChange}
-          required
-        />
-      </Button>
-      <div className="flex items-center justify-center gap-4">
-        <Button
-          variant="contained"
-          color="primary"
-          // onClick={handleUpload}
-          type="submit"
-          disabled={!selectedFile || loading}
-        >
-          Upload
-        </Button>
-        <Button
-          variant="contained"
-          color="secondary"
-          onClick={() => setSelectedFile(null)}
-          disabled={!selectedFile || loading}
-        >
-          Delete
-        </Button>
-      </div>
-    </div>
     </form>
+    </div>
   );
 }
