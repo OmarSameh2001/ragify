@@ -1,4 +1,4 @@
-import { error } from "console";
+// import { error } from "console";
 import faiss from "faiss-node";
 import { console } from "inspector";
 

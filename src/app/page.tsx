@@ -1,5 +1,5 @@
-import { Button } from "@mui/material";
-import Image from "next/image";
+// import { Button } from "@mui/material";
+// import Image from "next/image";
 import Link from "next/link";
 
 export default function Home() {
@@ -12,11 +12,22 @@ export default function Home() {
         <p className="text-lg text-gray-700 text-center sm:text-left">
           A simple and efficient way to upload and process your PDF files.
         </p>
-        <Link href="/upload">
-        <Button variant="outlined">Upload</Button>
-        </Link>
+        <div className="flex gap-4">
+          <Link
+            href="/upload"
+            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Upload PDF
+          </Link>
+          <Link
+            href="/chat"
+            className="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-colors"
+          >
+            Chat with your documents
+          </Link>
+        </div>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
+      {/* <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
         <a
           className="flex items-center gap-2 hover:underline hover:underline-offset-4"
           href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
@@ -62,7 +73,7 @@ export default function Home() {
           />
           Go to nextjs.org →
         </a>
-      </footer>
+      </footer> */}
     </div>
   );
 }

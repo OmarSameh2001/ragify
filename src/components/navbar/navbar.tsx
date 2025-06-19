@@ -14,6 +14,9 @@ const Navbar = () => {
           <Link href="/upload">
             <p className="text-gray-300 hover:text-white">Upload</p>
           </Link>
+          <Link href="/chat">
+            <p className="text-gray-300 hover:text-white">Chat</p>
+          </Link>
           {/* <Link href="/contact">
             <p className="text-gray-300 hover:text-white">Contact</p>
           </Link> */}

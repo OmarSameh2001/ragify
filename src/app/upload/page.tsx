@@ -1,10 +1,11 @@
 "use client";
-import { Button, ButtonProps, Switch, TextField } from "@mui/material";
+import { Button, ButtonProps } from "@mui/material";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { initDB } from "@/app/(helpers)/indexDb";
 import FilesTable from "@/components/table/table";
-import { text } from "stream/consumers";
+// import { text } from "stream/consumers";
+import { MdDeleteForever } from "react-icons/md";
 
 export default function Upload() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -27,7 +28,7 @@ export default function Upload() {
       return data.data;
     },
   });
-  const { data:localDb, refetch: refetchLocalDb } = useQuery({
+  const { data: localDb, refetch: refetchLocalDb } = useQuery({
     queryKey: ["getLocalDb", selectedFile, session],
     queryFn: async () => {
       const db = await initDB();
@@ -36,19 +37,19 @@ export default function Upload() {
     },
   });
   // useEffect(() => {
-    // const fetchLocalDb = async () => {
-    //   const db = await initDB();
-    //   const files = await db.getAll("files");
-    //   setLocalDb(files);
-    // };
-    // fetchLocalDb();
+  // const fetchLocalDb = async () => {
+  //   const db = await initDB();
+  //   const files = await db.getAll("files");
+  //   setLocalDb(files);
+  // };
+  // fetchLocalDb();
   // }, [selectedFile]);
 
   const checkDuplicateFile = async (fileName: string) => {
     const db = await initDB();
     const files = await db.getAll("files");
     return files.some((file: { name: string }) => file.name === fileName);
-  }
+  };
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
@@ -123,67 +124,89 @@ export default function Upload() {
     }
   }, []);
   console.log("Local DB:", localDb);
-  console.log('Data:',data)
+  console.log("Data:", data);
   return (
     <div>
-      
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleUpload();
-      }}
-    >
-      <div className="flex items-center justify-center min-h-screen flex-col">
-        {localDb && localDb.length > 0 && (
-        <div className="flex items-center justify-center flex-col mb-4">
-          <p className="text-gray-600">
-            You have uploaded the following files:
-          </p>
-          {/* <ul className="list-disc list-inside">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleUpload();
+        }}
+      >
+        <div className="flex items-center justify-center min-h-screen flex-col">
+          {localDb && localDb.length > 0 && (
+            <div className="flex items-center justify-center flex-col mb-4">
+              <p className="text-gray-600">
+                You have uploaded the following files:
+              </p>
+              {/* <ul className="list-disc list-inside">
             {localDb.map((value: any) => (
               <li key={value.name}>{value.name}</li>
             ))}
           </ul> */}
-          <FilesTable tableData={localDb} indexed={data} refetchLocal={refetchLocalDb} refetchIndex={refetch} sessionId={session}/>
-        </div>
-      )}
-        <p className="text-gray-600">
-          Select a PDF file to upload. The file will be processed and stored.
-        </p>
-        <p className="text-gray-600 mb-4">
-          Make sure the file is less than 10MB in size and is a valid PDF.
-        </p>
-        <Button {...buttonProps}>
-          {selectedFile ? `File: ${selectedFile.name}` : "Choose PDF File"}
-          <input
-            type="file"
-            hidden
-            accept=".pdf" // Accept only PDF files
-            onChange={handleFileChange}
-            required
-          />
-        </Button>
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            variant="contained"
-            color="primary"
-            // onClick={handleUpload}
-            type="submit"
-            disabled={!selectedFile || loading}
-          >
-            Upload
+              <FilesTable
+                tableData={localDb}
+                indexed={data}
+                refetchLocal={refetchLocalDb}
+                refetchIndex={refetch}
+                sessionId={session}
+              />
+
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={async () => {
+                  await fetch(`/api/files?sessionId=${session}`, {
+                    method: "DELETE",
+                  });
+                  alert("Session cleared successfully.");
+                  refetch();
+                }}
+                disabled={!(data && data.length > 0)}
+                style={{ marginTop: "10px" }}
+              >
+                <MdDeleteForever style={{ scale: "1.5", marginRight:'5px' }} />
+                Clear Session
+              </Button>
+            </div>
+          )}
+          <p className="text-gray-600">
+            Select a PDF file to upload. The file will be processed and stored.
+          </p>
+          <p className="text-gray-600 mb-4">
+            Make sure the file is less than 10MB in size and is a valid PDF.
+          </p>
+          <Button {...buttonProps}>
+            {selectedFile ? `File: ${selectedFile.name}` : "Choose PDF File"}
+            <input
+              type="file"
+              hidden
+              accept=".pdf" // Accept only PDF files
+              onChange={handleFileChange}
+              required
+            />
           </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => setSelectedFile(null)}
-            disabled={!selectedFile || loading}
-          >
-            Delete
-          </Button>
+          <div className="flex items-center justify-center gap-4">
+            <Button
+              variant="contained"
+              color="primary"
+              // onClick={handleUpload}
+              type="submit"
+              disabled={!selectedFile || loading}
+            >
+              Upload
+            </Button>
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={() => setSelectedFile(null)}
+              disabled={!selectedFile || loading}
+            >
+              Delete
+            </Button>
+          </div>
         </div>
-      </div>
-    </form>
+      </form>
     </div>
   );
 }
